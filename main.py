@@ -59,13 +59,21 @@ def add_entry(a_connection, a_product_id, a_title, a_price, a_available, a_diffe
     sql = 'INSERT INTO products (product_id, title, price, available, current_difference) VALUES ("%s", "%s", %f, "%s", %f)' % (a_product_id, a_title, a_price, a_available, a_difference)
     cur = a_connection.execute(sql)
 
-def add_history(a_connection, a_product_id, a_price):
-    sql = 'INSERT INTO history (product_id, price) VALUES ("%s", %f)' % (a_product_id, a_price)
+def add_history(a_connection, a_product_id, a_price, a_available):
+    sql = 'INSERT INTO history (product_id, price, available) VALUES ("%s", %f, "%s")' % (a_product_id, a_price, a_available)
     a_connection.execute(sql)
 
 def update_entry(a_connection, a_product_id, a_title, a_price, a_available, a_difference):
     sql = 'UPDATE products set title="%s", price=%f, available="%s", current_difference=%f WHERE product_id = "%s"' % (a_title, a_price, a_available, a_difference, a_product_id)
-    cur = a_connection.execute(sql)
+    print(sql)
+    a_connection.execute(sql)
+
+def print_update_entry(a_db, a_product_id, a_title, a_old_price, a_new_price, a_difference, a_available):
+    print("[%s] - %s - O.P: %f - N.P: %f - %f - [%s]" % (a_product_id, a_title, a_old_price, a_new_price, a_difference, a_available))
+    update_entry(a_db, a_product_id, a_title, a_new_price, a_available, a_difference)
+    a_db.commit()
+    add_history(a_db, a_product_id, a_old_price, a_available)
+    a_db.commit()
 
 def main():
     print("Getting products list...")
@@ -75,25 +83,43 @@ def main():
     rows = chunks(rows, 5)
     print("Database...")
     db = connect_db('cstore.db')
-    counter = 0
+    counter_updates = 0
+    counter_adds = 0
     for row in rows:
+        # remote values
+        product_id = row[0]
+        title = row[1].replace('"', '')
         price = row[2].replace('.', '')
-        price = float(price.replace(',', '.'))        
-        query = show_product(db, row[0])
+        price = float(price.replace(',', '.'))
+        available = row[3]
+        # local values
+        query = show_product(db, product_id)
         if len(query) == 0:
-            print("Adding row (%s, %s, %f)" % (row[0], row[1], price))
-            add_entry(db, row[0], row[1].replace('"',''), price, row[3], 0.)
+            print("[New Product]")
+            print("[%s] - %s -  %f - [%s]" % (product_id, title, price, available))
+            print()
+            add_entry(db, product_id, title.replace('"',''), price, available, 0.)
+            counter_adds += 1
         else:
-            diff = price - query[-1][2]
-            if (int(diff) != 0):
-                print("Updated product ->", query[-1][0], query[-1][1], " old price: ", query[-1][2], " new price: ", price, " diff: ", diff)
-                update_entry(db, row[0], row[1].replace('"',''), price, row[3], diff)
-                add_history(db, row[0], query[-1][2])
-                counter = counter + 1
-
+            q_product_id = query[-1][1]
+            q_title = query[-1][2].replace('"', '')
+            q_price = query[-1][3]
+            q_available = query[-1][4]
+            diff = price - q_price
+            if (int(diff) != 0) or (available != q_available):
+                print(available, q_available)
+                if int(diff) != 0:
+                    print("[Updated Price]", end='')
+                if available != q_available:
+                    print("[Updated Availability]", end='')
+                print()
+                print_update_entry(db, product_id, q_title, price, q_price, diff, q_available)
+                print()
+                counter_updates += 1
     db.commit()
     close_db(db)
-    print("Preços atualizados =", counter)
+    print("Updated Products =", counter_updates)
+    print("Added Products =", counter_adds)
 
 if __name__ == '__main__':
     main()
